@@ -1,5 +1,5 @@
 # MotifDiff
-This tool is to predict the millions of variant effects on TF binding with flexible setup options
+This tool is to predict millions of variants effects on TF binding with flexible setup options
 
 ## Installation
 ```
