@@ -3,7 +3,7 @@ This tool is to predict millions of variants effects on TF binding with flexible
 
 ## Installation
 ```
-python -m pip install MotifDiff-pkg
+pip install MotifDiff-pkg
 ```
 ## How to use
 The very basic run with the required inputs will be:
