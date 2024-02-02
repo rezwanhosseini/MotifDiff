@@ -3,12 +3,12 @@ This tool is to predict millions of variants effects on TF binding with flexible
 
 ## Installation
 ```
-python -m pip install ...
+python -m pip install MotifDiff-pkg
 ```
 ## How to use
 The very basic run with the required inputs will be:
 ```
-MotifDiff --genome hg38/hg19 --motif motif_file --vcf vcf_file --out output_file
+getDiff --genome hg38/hg19 --motif motif_file --vcf vcf_file --out output_file
 ```
 where,
 - ```--genome``` is the FASTA file for hg38 or hg19 depending on the variants.
