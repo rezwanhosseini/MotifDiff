@@ -10,6 +10,9 @@ from scipy.optimize import curve_fit
 from scipy.interpolate import PchipInterpolator
 import regex as re
 
+torch.set_printoptions(precision=8)
+np.set_printoptions(precision=8)
+
 
 def number_of_headers(filename):
     header=0
@@ -50,7 +53,7 @@ def init_dist(dmin, dmax, dp, weights, probs):
 
 def scoreDist(pwm, nucleotide_prob=None, gran=None, size=1000):
     if nucleotide_prob is None:
-        nucleotide_prob = np.ones(4)/4
+        nucleotide_prob = [np.ones(4)/4]*pwm.shape[0]
     if gran is None:
         if size is None:
             raise ValueError("provide either gran or size. Both missing.")
@@ -67,27 +70,31 @@ def scoreDist(pwm, nucleotide_prob=None, gran=None, size=1000):
     return support, distribution[ii]
 
 
+
+def dinuc_cols_2_tmats(prob):
+    tmats = []
+    for i in range(prob.shape[0]):
+        res = np.reshape(prob.iloc[i,:], (4, 4), order='C')
+        res = pd.DataFrame(res, index=['A', 'C', 'G', 'T'], columns=['A', 'C', 'G', 'T'])
+        res = res.div(res.sum(axis=1), axis=0)
+        tmats.append(res)
+    return tmats
+
 def scoreDistDinuc(pssm, prob, gran=None, size=1000):
     
     nucleotides = ['A', 'C', 'G', 'T']
     nms = [a + b for a in nucleotides for b in nucleotides]
     pssm = pd.DataFrame(pssm)
     pssm.columns = nms
-      
-    if prob is None:
-        #prob = dict(zip(['A', 'C', 'G', 'T'], np.ones(4)/4))
-        bg_prob = pd.DataFrame(np.repeat(np.ones(4)/4, pssm.shape[0]).reshape(pssm.shape[0],4), columns=nucleotides)
-    else:
-        prob = pd.DataFrame(prob, columns=nms)
-        bg_prob = pd.DataFrame(np.zeros((prob.shape[0],4)), columns=nucleotides)
-        for pos in range(0,prob.shape[0]):
-            bg_prob.iloc[pos,:] = [prob.iloc[pos,:][[f'{nuc1}{nuc2}' for nuc2 in nucleotides]].sum() for nuc1 in nucleotides]
+    
+    prob = pd.DataFrame(prob, columns=nms)  
+    tmats = dinuc_cols_2_tmats(prob)
     
     if gran is None:
         if size is None:
             raise ValueError("provide either gran or size. Both missing.")
-        gran = (np.max(pssm) - np.min(pssm))/(size - 1)            
-    
+        gran = (np.max(pssm) - np.min(pssm))/(size - 1)    
+        
     pssm = np.round(pssm / gran)
     pssm = pssm * gran
     mnscore = np.min(pssm, axis=1).sum()
@@ -105,27 +112,24 @@ def scoreDistDinuc(pssm, prob, gran=None, size=1000):
     pssm_cinds = [i for i, name in enumerate(pssm.columns) if name.endswith('C')]
     pssm_ginds = [i for i, name in enumerate(pssm.columns) if name.endswith('G')]
     pssm_tinds = [i for i, name in enumerate(pssm.columns) if name.endswith('T')]
-
     ascores = pssm.iloc[0, pssm_ainds].values
     cscores = pssm.iloc[0, pssm_cinds].values
     gscores = pssm.iloc[0, pssm_ginds].values
     tscores = pssm.iloc[0, pssm_tinds].values
-
     
     ascores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_ainds], ascores)}
     cscores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_cinds], cscores)}
     gscores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_ginds], gscores)}
     tscores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_tinds], tscores)}
-
     # Probabilities of initial dinucleotides
     def ffu(nms):
-        return [np.prod([bg_prob.iloc[0,:][x] for x in nm]) for nm in nms]
-        
+        #return [np.prod([bg_prob.iloc[0,:][x] for x in nm]) for nm in nms]
+        return [prob[nm][0] for nm in nms]
+
     aprobs = ffu(ascores_i.keys())
     cprobs = ffu(cscores_i.keys())
     gprobs = ffu(gscores_i.keys())
     tprobs = ffu(tscores_i.keys())
-    
     for i in range(4):
         SD.loc['A', ascores_i[list(ascores_i.keys())[i]]] += aprobs[i]
         SD.loc['C', cscores_i[list(cscores_i.keys())[i]]] += cprobs[i]
@@ -136,9 +140,11 @@ def scoreDistDinuc(pssm, prob, gran=None, size=1000):
     def update_dist(nuc, pssm_inds, pos):
         vals = pssm.iloc[pos,pssm_inds]
         shifts = (vals/gran).round().astype(int) # shouldn't we use s2ind function here too?
+        #shifts = [s2ind(s) for s in vals.values]
+        #print(shifts)
         tvec = np.zeros(SD.shape[1])
         for i in range(4):
-            tvec += np.roll(SD.iloc[i, :], shifts[i]) * bg_prob.iloc[pos,:][nuc]
+            tvec += np.roll(SD.iloc[i,:], shifts[i]) * tmats[pos][nuc][i] #bg_prob.iloc[pos,:][nuc]
         return(tvec)
 
     for pos in range(1, pssm.shape[0]):
@@ -453,6 +459,7 @@ class MEME_probNorm():
             #    bgMat=np.tile(bg,(kernel.shape[0],1))
             #    kernel=np.log((kernel+offset)/bgMat)
             
+            #if k==144: print("real pwm", kernel)
             if transform:
                 kernel, _ = transform_kernel(kernel, self.smoothing, background_prob)
             else:    
@@ -462,13 +469,14 @@ class MEME_probNorm():
                 else:
                     kernel[kernel == 0] = self.precision
                     kernel = np.log(kernel)
+            #if k==144: print("after transformation transpose", kernel.T)
             
             
             out[2*k  , :, :kernel.shape[0]] = kernel.T
             out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
             mask[2*k  , :, :kernel.shape[0]] = 1
             mask[2*k+1, :, :kernel.shape[0]] = 1
-        
+            #if k==144: print(torch.from_numpy(out[2*k  , :, :kernel.shape[0]]))
         return torch.from_numpy(out), mask
     
     def names(self):
@@ -685,10 +693,12 @@ class vcfData:
             if refs>0 and refe<self.limits[c]:
                 seg = self.seqs.fetch(c, refs, refe)
                 seg=seg.upper()
+                
                 #print(f"Sequence: {seg[:self.windowsize-1]} {seg[self.windowsize-1]} {seg[self.windowsize:]}")
                 #print(f"a: ({a}, {self.lookup[a]}), r: ({r}, {self.lookup[r]}), Target: {seg[self.windowsize-1]}")
                 #assert(seg[self.windowsize-1]==r or len(a)!=1 or len(r)!=1)
                 #print(i, c, refs+int(self.windowsize), seg[self.windowsize-1:-(self.windowsize-1)], r)
+                
                 assert(seg[self.windowsize-1:-(self.windowsize-1)]==r)
                 batch[i, :, :int(refe-refs-offset)] = returnonehot(seg, self.dinucleotide)
                 returnmask(i, mask, self.windowsize, refs, refe, self.dinucleotide)
