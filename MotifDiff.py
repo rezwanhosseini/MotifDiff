@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from torch.nn import functional as F
 import pandas as pd
-from utilNEW import vcfData, MEME_probNorm, MEME_FABIAN, MCspline_fitting, mc_spline #
+from .util import vcfData, MEME_probNorm, MEME_FABIAN, MCspline_fitting, mc_spline #
 import torch
 import numpy as np
 from enum import Enum
@@ -107,7 +107,7 @@ def variantdiff(genome: str = typer.Option(..., help="fasta file for the genome"
     alpha = 0.1
     print(f"Batch size: {batch}")
     print("Calculating convolutions")
-    for i in range(1):#len(segments)):
+    for i in range(len(segments)):
         print(f"Batch {i+1}:")
         i1, i2 = i*batch, (i+1)*batch
         if i2 >= segments.n: i2 = segments.n
