@@ -1,5 +1,5 @@
 # MotifDiff
-This tool is to predict millions of variants effects on TF binding with flexible setup options
+MotifDiff is a novel computational tool designed to quantify variant effects using mono and dinucleotide PWMs. It offers several key advantages, including scalability to score millions of variants within minutes, implementation of various normalization strategies for optimal performance, and support for both dinucleotide and mononucleotide models for transcription factor binding and also considering the effect of variants both inside and outside of the binding site. More details including MotifDiff's efficacy across diverse ground truth datasets and also the mathematical details behind the tool can be found in the paper **Ultra-fast variant effect prediction using biophysical transcription factor binding models**
 
 ## Installation
 ```
