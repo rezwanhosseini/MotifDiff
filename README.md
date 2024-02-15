@@ -14,7 +14,7 @@ where,
 - ```--genome``` is the FASTA file for hg38 or hg19 depending on the variants.
 - ```motif_file```  is either a meme format of PPMs or .pwm or .pcm format files.
 - ```vcf_file```  is a vcf file of variants. the order of the columns in the file should be: chr, pos, ID, ref, alt. .csv files are accepted too.
-- ```out_file``` is a name/path for the score files to be saved. there will be three outputs ending with .alt which is the scores for the alt variants, .ref which is the scores for ref variants, and .diff which is the diff scores for the variants.
+- ```out_file``` is a name/path for the score files to be saved. there will be three outputs ending with .alt which is the scores for the alt variants, .ref which is the scores for ref variants, and .diff which is the diff scores for the variants. the name of the saved output file will be "{output_file}_{nuc}_{method}_{mode}". 
   This will calculate the simple log-odd difference as the scores for all motifs provided in the ```motif_file``` for each variant.
 
   Following options could be added to get normalized scores from different methods:
