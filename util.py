@@ -9,6 +9,9 @@ import os
 from scipy.optimize import curve_fit
 from scipy.interpolate import PchipInterpolator
 import regex as re
+import itertools as itt
+import diNucMat as dnma
+import diNucMotDist as dnsd
 
 torch.set_printoptions(precision=8)
 np.set_printoptions(precision=8)
@@ -69,128 +72,42 @@ def scoreDist(pwm, nucleotide_prob=None, gran=None, size=1000):
     support = support_min + (ii) * gran
     return support, distribution[ii]
 
+def mono2di(ppm): 
+    num_rows = ppm.shape[0]
+    num_cols = ppm.shape[1]** 2
+    ppm_di = np.zeros((num_rows-1, num_cols))
+    for i in range(num_rows-1):
+        for j in range(ppm.shape[1]):
+            ppm_di[i,4*j:4*j+4] = ppm[i,j]*ppm[i+1,:]
+    return ppm_di    
 
+def scoreDistDinuc(pwm, gran=None, size=1000):
+    tmp  = pwm 
+    cn   = ["".join(i) for i in itt.product(["A","C","G","T"], repeat=2)]
+    pssm = dnma.diNucMat(tmp, cn)
 
-def dinuc_cols_2_tmats(prob):
-    tmats = []
-    for i in range(prob.shape[0]):
-        res = np.reshape(prob.iloc[i,:], (4, 4), order='C')
-        res = pd.DataFrame(res, index=['A', 'C', 'G', 'T'], columns=['A', 'C', 'G', 'T'])
-        res = res.div(res.sum(axis=1), axis=0)
-        tmats.append(res)
-    return tmats
-
-def scoreDistDinuc(pssm, prob, gran=None, size=1000):
-    
-    nucleotides = ['A', 'C', 'G', 'T']
-    nms = [a + b for a in nucleotides for b in nucleotides]
-    pssm = pd.DataFrame(pssm)
-    pssm.columns = nms
-    
-    prob = pd.DataFrame(prob, columns=nms)  
-    tmats = dinuc_cols_2_tmats(prob)
-    
     if gran is None:
         if size is None:
             raise ValueError("provide either gran or size. Both missing.")
-        gran = (np.max(pssm) - np.min(pssm))/(size - 1)    
-        
-    pssm = np.round(pssm / gran)
-    pssm = pssm * gran
-    mnscore = np.min(pssm, axis=1).sum()
-    mxscore = np.max(pssm, axis=1).sum()
-    nscores = int(np.round((mxscore - mnscore) / gran)) + 1
+        gran = (np.max(pwm) - np.min(pwm))/(size - 1)    
+            
+    tmp  = np.exp(tmp)
+    tmp  = tmp / np.sum(tmp, axis=1, keepdims=True)   
+
+    prob = dnma.diNucProbMat(tmp, cn)
+    # calculating the score dist
+    sd_mot = dnsd.score_dist(pssm, prob, gran=0.01)
+
+    #- now let's make a dinucleotide model with iid columns
+    avg_dinuc_freqs = prob.values.mean(axis=0)
+    iid_prob_values = np.repeat(avg_dinuc_freqs,pwm.shape[0]).reshape((pwm.shape[0],16), order = 'F')
+    prob_bg1        = dnma.diNucProbMat(iid_prob_values, cn)
+    sd_bg1          = dnsd.score_dist(pssm, prob_bg1, gran=0.01)
     
-    def s2ind(s):
-        return int((s / gran - mnscore / gran).round())
-    
-    SD = np.zeros((4, nscores))
-    nucleotides = ['A', 'C', 'G', 'T']
-    SD = pd.DataFrame(SD, index=nucleotides)
-
-    pssm_ainds = [i for i, name in enumerate(pssm.columns) if name.endswith('A')]
-    pssm_cinds = [i for i, name in enumerate(pssm.columns) if name.endswith('C')]
-    pssm_ginds = [i for i, name in enumerate(pssm.columns) if name.endswith('G')]
-    pssm_tinds = [i for i, name in enumerate(pssm.columns) if name.endswith('T')]
-    ascores = pssm.iloc[0, pssm_ainds].values
-    cscores = pssm.iloc[0, pssm_cinds].values
-    gscores = pssm.iloc[0, pssm_ginds].values
-    tscores = pssm.iloc[0, pssm_tinds].values
-    
-    ascores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_ainds], ascores)}
-    cscores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_cinds], cscores)}
-    gscores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_ginds], gscores)}
-    tscores_i = {name: s2ind(score) for name, score in zip(pssm.columns[pssm_tinds], tscores)}
-    # Probabilities of initial dinucleotides
-    def ffu(nms):
-        #return [np.prod([bg_prob.iloc[0,:][x] for x in nm]) for nm in nms]
-        return [prob[nm][0] for nm in nms]
-
-    aprobs = ffu(ascores_i.keys())
-    cprobs = ffu(cscores_i.keys())
-    gprobs = ffu(gscores_i.keys())
-    tprobs = ffu(tscores_i.keys())
-    for i in range(4):
-        SD.loc['A', ascores_i[list(ascores_i.keys())[i]]] += aprobs[i]
-        SD.loc['C', cscores_i[list(cscores_i.keys())[i]]] += cprobs[i]
-        SD.loc['G', gscores_i[list(gscores_i.keys())[i]]] += gprobs[i]
-        SD.loc['T', tscores_i[list(tscores_i.keys())[i]]] += tprobs[i]
-
-    
-    def update_dist(nuc, pssm_inds, pos):
-        vals = pssm.iloc[pos,pssm_inds]
-        shifts = (vals/gran).round().astype(int) # shouldn't we use s2ind function here too?
-        #shifts = [s2ind(s) for s in vals.values]
-        #print(shifts)
-        tvec = np.zeros(SD.shape[1])
-        for i in range(4):
-            tvec += np.roll(SD.iloc[i,:], shifts[i]) * tmats[pos][nuc][i] #bg_prob.iloc[pos,:][nuc]
-        return(tvec)
-
-    for pos in range(1, pssm.shape[0]):
-        t1 = update_dist('A', pssm_ainds, pos)
-        t2 = update_dist('C', pssm_cinds, pos)
-        t3 = update_dist('G', pssm_ginds, pos)
-        t4 = update_dist('T', pssm_tinds, pos)
-        SD.iloc[0,:] = t1
-        SD.iloc[1,:] = t2
-        SD.iloc[2,:] = t3
-        SD.iloc[3,:] = t4
-
-    #print(mxscore)
-    #print(mxscore+gran)
-    x = np.arange(mnscore,mxscore,gran)
-    y = np.sum(SD, axis=0)
-    if len(x)==len(y):
-        #Tprint("lengths are equal")
-        #print(x[len(x)-3:len(x)])
-        return(tuple((x,y)))
-    if len(x)<len(y):
-        #print("lenagth are NOT equal")
-        x = np.arange(mnscore,mxscore+gran-1e-5,gran)
-        y = np.sum(SD, axis=0)
-        #print(x[len(x)-3:len(x)])
-        return(tuple((x,y)))
+    return(sd_mot.x, sd_bg1.y, sd_mot.y)
 
 
-def return_coef_for_normalization(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono"):
-    params = []
-    for i in range(0,pwms.shape[0],2):
-        pwm = pwms[i].numpy().T      
-        pwm = pwm[pwm.sum(axis=1) != 0, :]
-        nucleotide_prob = np.exp(pwm) / np.sum(np.exp(pwm), axis=1, keepdims=True)
-        if nuc=="mono":
-            s, d = scoreDist(pwm, nucleotide_prob, gran, size)
-        if nuc=="di":
-            s, d = scoreDistDinuc(pwm, nucleotide_prob, gran=gran, size=size)
-        param, _ = curve_fit(logit, s, np.cumsum(d), maxfev=5000)
-        #f = interp1d(np.exp(s), np.cumsum(d))
-        #print(curve_fit(logit, np.exp(s), np.cumsum(d), maxfev=5000))
-        #params.append(param)
-        params.append(param)
-    return params
-
-def MCspline_fitting(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono"):
+def MCspline_fitting(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono", method="motif_based"):
     spline_list = []
     for i in range(0,pwms.shape[0],2):
         pwm = pwms[i].numpy().T      
@@ -198,33 +115,18 @@ def MCspline_fitting(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono
         nucleotide_prob = np.exp(pwm) / np.sum(np.exp(pwm), axis=1, keepdims=True)
         if nuc=="mono":
             s, d = scoreDist(pwm, nucleotide_prob, gran, size)
+            spl = PchipInterpolator(s, np.cumsum(d))
         if nuc=="di":
-            s, d = scoreDistDinuc(pwm, nucleotide_prob, gran=gran, size=size)  
-        spl = PchipInterpolator(s, np.cumsum(d))
+            s, d_iid, d_m = scoreDistDinuc(pwm, gran=gran, size=size)  
+            if method=="iid":
+                spl = PchipInterpolator(s, np.cumsum(d_iid))
+            if method=="motif_based":
+                spl = PchipInterpolator(s, np.cumsum(d_m))
+            if method=="mixture":
+                spl = PchipInterpolator(s, np.cumsum(0.5*d_m + 0.25*d_iid + 0.25*1/len(d_iid)))
         spline_list.append(spl)
     return spline_list
 
-#def return_coef_for_normalization_diff(pwms, nucleotide_prob=None, gran=None, size=1000, length_correction=1):
-#   params = []
-#    for i in range(0,pwms.shape[0],2):
-#        pwm = pwms[i].numpy().T
-#        pwm = pwm[pwm.sum(axis=1) != 0, :]
-#        #prob = pwm.sum(axis=0)/pwm.sum()
-#       prob = np.sum(np.exp(pwm) / np.exp(pwm).sum(axis=1).reshape(-1,1), axis=0)/np.sum(np.exp(pwm) / np.exp(pwm).sum(axis=1).reshape(-1,1))
-#       s, d = scoreDist(pwm, prob, gran, size)#, diff=True)
-#       param, _ = curve_fit(logit, s, np.power(np.cumsum(d), length_correction))
-#       params.append(param)
-#   return params
-
-def normalize_mat(mat, params):
-    out = torch.empty_like(mat)
-    assert mat.shape[1] == len(params)
-    for i in range(len(params)):
-        #out[:,i] = logit(mat[:,i], *params[i])
-        #tmp = np.clip(mat[:,i],params[i].x.min(), params[i].x.max())
-        #tmp = params[i](tmp)
-        out[:,i] = logit_torch(mat[:,i], *params[i])
-    return out
 
 def mc_spline (mat, spline_list):
     out = torch.empty_like(mat)
@@ -236,18 +138,6 @@ def mc_spline (mat, spline_list):
         out_i[out_i<0]=0
         out[:,i] = torch.tensor(out_i)
     return out
-
-#def readvcf(filename):
-#    nh = number_of_headers(filename)
-#    if nh > 1:
-#        data = pd.read_csv(filename, header=list(range(nh)), sep="\t")
-#        data.columns = pd.MultiIndex.from_tuples([tuple(i[1:] for i in data.columns[0])] +list(data.columns)[1:])
-#    elif nh == 1:
-#        data = pd.read_csv(filename, header=0, sep="\t")
-#        data.columns = [data.columns[0][1:]] + data.columns.to_list()[1:]
-#    else:
-#        data = pd.read_csv(filename, header=None, sep="\t")
-#    return data  
 
 def readvcf(filename):
     nh = number_of_headers(filename)
@@ -313,15 +203,6 @@ def returnonehot(string, dinucleotide=False):
 
     return out
 
-def read_TFFM(file):
-    tree = ET.parse(file)
-    root = tree.getroot()
-    data = []
-    for state in root[0].iterfind("state"):
-        discrete = state[0]
-        if "order" in discrete.attrib:
-            data.append(discrete.text.split(","))
-    return np.array(data, dtype=float)
 
 def read_pwm(filename):
     with open(filename,'r') as file:
@@ -430,7 +311,10 @@ class MEME_probNorm():
                         matrix = matrix[1:-1]
                     else:
                         matrix = matrix[1:]
-                    matrices.append(np.array([i.split() for i in matrix], dtype=float))
+                    m = np.array([i.split() for i in matrix], dtype=float)
+                    if m.shape[1]==4:
+                        m = mono2di(m)
+                    matrices.append(m)
                     if matrices[-1].shape[0] > length:
                         length = matrices[-1].shape[0]
             else:   
@@ -450,16 +334,7 @@ class MEME_probNorm():
         out = np.zeros((out_channels, in_channels, length), dtype=np.float32)
         mask = torch.zeros((out_channels, 1, length), dtype=torch.uint8)
         for k, kernel in enumerate(matrices):
-            #if transform == "constant":
-            #    bg=np.repeat(0.25, in_channels).reshape(1,4)
-            #if transform == "local":
-            #    bg=np.average(kernel,0).reshape(1,4)
-            #if transform != "none":
-            #   offset=np.min(kernel[kernel>0])
-            #    bgMat=np.tile(bg,(kernel.shape[0],1))
-            #    kernel=np.log((kernel+offset)/bgMat)
             
-            #if k==144: print("real pwm", kernel)
             if transform:
                 kernel, _ = transform_kernel(kernel, self.smoothing, background_prob)
             else:    
@@ -468,9 +343,7 @@ class MEME_probNorm():
                     kernel = kernel 
                 else:
                     kernel[kernel == 0] = self.precision
-                    kernel = np.log(kernel)
-            #if k==144: print("after transformation transpose", kernel.T)
-            
+                    kernel = np.log(kernel)            
             
             out[2*k  , :, :kernel.shape[0]] = kernel.T
             out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
@@ -482,14 +355,6 @@ class MEME_probNorm():
     def names(self):
         return self.names
     
-    #def Names(self, text):
-    #    if text.endswith(".meme"):
-    #        with open(text,'r') as file:
-    #            data = file.read()
-    #        names = re.findall(r"MOTIF (.*)\n", data)
-    #    else:
-    #        names = os.listdir(text)
-    #    return names
 
 class MEME_FABIAN():
     def __init__(self, precision=1e-7, smoothing=0.02, background=None):
@@ -562,71 +427,6 @@ class MEME_FABIAN():
             mask[2*k+1, :, :kernel.shape[0]] = 1
         return torch.from_numpy(out), mask, motif_norms
 
-class TFFM():
-    def __init__(self):
-        self.names = []
-        self.nmotifs = 0
-
-    def parse(self, directory):
-        self.names = os.listdir(directory)
-        self.nmotifs = len(self.names)
-        in_channels = 16
-        out_channels = self.nmotifs
-        data = []
-        height = 0
-        for i in self.names:
-            tffm = read_TFFM(os.path.join(directory, i))
-            data.append(tffm)
-            if tffm.shape[0] > height:
-                height = tffm.shape[0]
-        out = np.zeros((out_channels, in_channels, height), dtype=np.float32)
-        mask = torch.zeros((out_channels, 1 , height), dtype=torch.uint8)
-        for n, tffm in enumerate(data):
-            out[n, :, :tffm.shape[0]] = tffm.T
-            mask[n, :, :tffm.shape[0]] = 1
-        return torch.from_numpy(out), mask
-
-class TFFM_with_Transformation():
-    def __init__(self, precision=1e-7, smoothing=0.02, background=None):
-        self.names = []
-        self.nmotifs = 0
-        self.precision=1e-7
-        self.smoothing = smoothing
-        self.background = []
-        if background is None:
-            self.background_prob = np.ones(16)*0.0625
-        else:
-            self.background_prob = background
-    def parse(self, directory):
-        self.names = os.listdir(directory)
-        self.nmotifs = len(self.names)
-        in_channels = 16
-        out_channels = self.nmotifs * 2
-        data = []
-        height = 0
-        for i in self.names:
-            if i.endswith(".dpcm") or i.endswith(".dpwm"):
-                tffm = read_pwm(os.path.join(directory, i))
-                data.append(tffm)
-                if tffm.shape[0]>height:
-                    height = tffm.shape[0]               
-            else:
-                tffm = read_TFFM(os.path.join(directory, i))
-                data.append(tffm)
-                if tffm.shape[0] > height:
-                    height = tffm.shape[0]
-        #print(data)
-        out = np.zeros((out_channels, in_channels, height), dtype=np.float32)
-        mask = torch.zeros((out_channels, 1 , height), dtype=torch.uint8)
-        motif_norms = np.zeros(self.nmotifs, dtype=np.float32)
-        for n, tffm in enumerate(data):
-            tffm, motif_norms[n] = transform_kernel(tffm, self.smoothing, self.background_prob)
-            out[2*n  , :, :tffm.shape[0]] = tffm.T
-            out[2*n+1, :, :tffm.shape[0]] = tffm[::-1, ::-1].T
-            mask[2*n , :, :tffm.shape[0]] = 1
-            mask[2*n+1,:, :tffm.shape[0]] = 1
-        return torch.from_numpy(out), mask, motif_norms
-
 
 
 class vcfData:
@@ -693,12 +493,10 @@ class vcfData:
             if refs>0 and refe<self.limits[c]:
                 seg = self.seqs.fetch(c, refs, refe)
                 seg=seg.upper()
-                
                 #print(f"Sequence: {seg[:self.windowsize-1]} {seg[self.windowsize-1]} {seg[self.windowsize:]}")
                 #print(f"a: ({a}, {self.lookup[a]}), r: ({r}, {self.lookup[r]}), Target: {seg[self.windowsize-1]}")
                 #assert(seg[self.windowsize-1]==r or len(a)!=1 or len(r)!=1)
                 #print(i, c, refs+int(self.windowsize), seg[self.windowsize-1:-(self.windowsize-1)], r)
-                
                 assert(seg[self.windowsize-1:-(self.windowsize-1)]==r)
                 batch[i, :, :int(refe-refs-offset)] = returnonehot(seg, self.dinucleotide)
                 returnmask(i, mask, self.windowsize, refs, refe, self.dinucleotide)
@@ -720,68 +518,6 @@ def stringstats(string):
     patterns = kmers_count(string)
     return np.array([gccount, lowercaseratio, *patterns], dtype=np.float32)
 
-class SegmentData:
-    def __init__(self, bed, batchsize, genome, windowsize, up, dinucleotide=False):
-        self.chrs, self.starts, self.ends, self.peaks = readbed(bed, up)
-        self.id = ["_".join([c, str(s), str(e)]) for c, s, e in zip(self.chrs, self.starts, self.ends)]
-        self.midpoints = np.asarray(np.ceil((self.starts + self.ends)/2),dtype=int)
-        self.seqs = FastaFile(genome)
-        refs = self.seqs.references
-        lengths = self.seqs.lengths
-        if windowsize>(min(lengths)/2):
-            self.new_starts = self.starts
-            self.new_ends=self.ends
-        else:
-            self.new_starts = self.midpoints - windowsize
-            self.new_ends = self.midpoints + windowsize
-        self.batchsize = batchsize
-        self.n = len(self.chrs)
-        self.padding = windowsize
-        self.additional = 4 * 4 + 2
-        self.limits = {refs[i]: lengths[i] for i in range(len(refs))}
-        self.out = open("coordinatesUsed.bed", "w")
-        self.dinucleotide = dinucleotide
-
-    def names(self):
-        return self.id
-
-    def __len__(self):
-        return int(np.ceil(self.n / self.batchsize))
-
-    def __getitem__(self, i):
-        i1, i2 = i*self.batchsize, (i+1)*self.batchsize
-        if i2 >= self.n: i2 = self.n
-        batchsize = int(i2 - i1)
-        if self.dinucleotide:
-            height = np.max(self.new_ends[i1:i2] - self.new_starts[i1:i2])-1# + self.padding
-            width = 16
-        else:
-            height = np.max(self.new_ends[i1:i2] - self.new_starts[i1:i2])# + self.padding
-            width = 4
-        batch = np.zeros((batchsize, width, height), dtype=np.float32) 
-        stats = np.empty((batchsize, self.additional), dtype=np.float32)
-        for i, c, p, s, e, new_s, new_e in zip(range(i2-i1), self.chrs[i1:i2], self.peaks[i1:i2], self.starts[i1:i2], self.ends[i1:i2], self.new_starts[i1:i2], self.new_ends[i1:i2]):
-            self.out.write(c+"\t"+str(new_s)+"\t"+str(new_e)+"\n")
-            if all(self.peaks!=None) and all('peak' in string for string in self.peaks):
-                if i==0: print('peaks available')
-                seg = self.seqs.fetch(p, new_s-s, new_e-s)
-            else:
-                if i==0: print('peaks not available')
-                if new_s>0 and new_e<self.limits[c]:
-                    seg = self.seqs.fetch(c, new_s, new_e)
-                else:
-                    seg = "N"*(self.padding*2)
-
-            stats[i] = stringstats(seg)
-            if self.dinucleotide:
-                batch[i, :, :(new_e-new_s)-1] = returnonehot(seg, dinucleotide=True)
-            else:
-                batch[i, :, :(new_e-new_s)] = returnonehot(seg)
-        return torch.from_numpy(batch), stats
-
-    def __del__(self):
-        pass
-        #self.out.close()
 
 if __name__ == "__main__":
     motif = MEME_FABIAN()
