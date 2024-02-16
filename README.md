@@ -19,8 +19,9 @@ where,
 
   Following options could be added to get normalized scores from different methods:
 - ```--method```  is the method for normalizing the scores from scanning the sequence. could be "FABIAN", or "probNorm".
+- ```--mode```  is the mode for pooling the mapped scores after normalization. could be "max", or "average".
 - ```--nuc```  is to specify whether mono nucleotide models are used or di nucleotide, could be "mono", or "di".
 - ```--MaxScale``` is to specify whether to do the Max Scaling or not. Just passing the ```--MaxScale``` is considered True and not passing it is considered as False.
-- ```--norm``` is the normalizing parameters that's already been prepared for HOCOMOCOv11 Human TFBS PWMs and can be used here for faster implementation. The parameters for both mono nucleotide and di nucleotide models can be find here: https://www.dropbox.com/scl/fo/sqkltsnhdn2il7olab7vr/h?rlkey=0sj46r3xsq8dbudstezzc1khv&dl=0
+- ```--norm``` is the normalizing parameters that's already been prepared for HOCOMOCOv11 Human TFBS PWMs and can be used here for faster implementation. The parameters for both mono nucleotide and di nucleotide models can be find here: https://www.dropbox.com/scl/fo/sqkltsnhdn2il7olab7vr/h?rlkey=0sj46r3xsq8dbudstezzc1khv&dl=0.
 - ```--batch``` is the batch size. default is 128.
-- ```--window``` is the window size for the sequence around variants
+- ```--window``` is the window size for the sequence around variants. the default is twice as the length of each motif which will only consider the variants inside the binding site. but it can also be set to larger sizes to includ variants further away from the binding site.
