@@ -15,8 +15,7 @@ where,
 - ```motif_file```  is either a meme format of PPMs or .pwm or .pcm format files. our evaluations were based on HOCOMOCO motifs which could be found here https://hocomoco11.autosome.org/downloads_v11 for both mono nucleotides and di nucleotides
 - ```vcf_file```  is a vcf file of variants. the order of the columns in the file should be: chr, pos, ID, ref, alt. .csv files are accepted too.
 - ```out_file``` is a name/path for the score files to be saved. there will be three outputs ending with .alt which is the scores for the alt variants, .ref which is the scores for ref variants, and .diff which is the diff scores for the variants.
-  This will calculate the simple log-odd difference as the scores for all motifs provided in the ```motif_file``` for each variant.
-
+  
   Following options could be added to get normalized scores from different methods:
 - ```--method```  is the method for normalizing the scores from scanning the sequence. could be "FABIAN", or "probNorm".
 - ```--mode```  is the mode for pooling the mapped scores after normalization. could be "max", or "average".
