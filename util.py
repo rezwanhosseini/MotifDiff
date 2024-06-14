@@ -12,7 +12,6 @@ import regex as re
 import itertools as itt
 from collections import namedtuple
 
-
 torch.set_printoptions(precision=8)
 np.set_printoptions(precision=8)
 
@@ -121,6 +120,7 @@ class diNucProbMat(diNucMat):
 
 
 def diNucMotDist(pssm, prob, gran=None, size=1000):
+#==============================================================================
     #- assert pssm  is a ov class diNucMat and 
     #  prob is of class diNucProbMat
     assert isinstance(pssm, diNucMat)    
@@ -218,6 +218,24 @@ def scoreDistDinuc(pwm, gran=None, size=1000):
     return(sd_mot.x, sd_bg1.y, sd_mot.y)
 
 
+
+#def return_coef_for_normalization(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono"):
+#    params = []
+#    for i in range(0,pwms.shape[0],2):
+#        pwm = pwms[i].numpy().T      
+#        pwm = pwm[pwm.sum(axis=1) != 0, :]
+#        nucleotide_prob = np.exp(pwm) / np.sum(np.exp(pwm), axis=1, keepdims=True)
+#       if nuc=="mono":
+#           s, d = scoreDist(pwm, nucleotide_prob, gran, size)
+#        if nuc=="di":
+#            s, d = scoreDistDinuc(pwm, nucleotide_prob, gran=gran, size=size)
+#        param, _ = curve_fit(logit, s, np.cumsum(d), maxfev=5000)
+#        #f = interp1d(np.exp(s), np.cumsum(d))
+#        #print(curve_fit(logit, np.exp(s), np.cumsum(d), maxfev=5000))
+#        #params.append(param)
+#        params.append(param)
+#    return params
+
 def MCspline_fitting(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono", method="motif_based"):
     spline_list = []
     for i in range(0,pwms.shape[0],2):
@@ -238,6 +256,27 @@ def MCspline_fitting(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono
         spline_list.append(spl)
     return spline_list
 
+#def return_coef_for_normalization_diff(pwms, nucleotide_prob=None, gran=None, size=1000, length_correction=1):
+#   params = []
+#    for i in range(0,pwms.shape[0],2):
+#        pwm = pwms[i].numpy().T
+#        pwm = pwm[pwm.sum(axis=1) != 0, :]
+#        #prob = pwm.sum(axis=0)/pwm.sum()
+#       prob = np.sum(np.exp(pwm) / np.exp(pwm).sum(axis=1).reshape(-1,1), axis=0)/np.sum(np.exp(pwm) / np.exp(pwm).sum(axis=1).reshape(-1,1))
+#       s, d = scoreDist(pwm, prob, gran, size)#, diff=True)
+#       param, _ = curve_fit(logit, s, np.power(np.cumsum(d), length_correction))
+#       params.append(param)
+#   return params
+
+#def normalize_mat(mat, params):
+#    out = torch.empty_like(mat)
+#    assert mat.shape[1] == len(params)
+#   for i in range(len(params)):
+#       #out[:,i] = logit(mat[:,i], *params[i])
+#       #tmp = np.clip(mat[:,i],params[i].x.min(), params[i].x.max())
+#       #tmp = params[i](tmp)
+#       out[:,i] = logit_torch(mat[:,i], *params[i])
+#   return out
 
 def mc_spline (mat, spline_list):
     out = torch.empty_like(mat)
@@ -250,15 +289,29 @@ def mc_spline (mat, spline_list):
         out[:,i] = torch.tensor(out_i)
     return out
 
+#def readvcf(filename):
+#    nh = number_of_headers(filename)
+#    if nh > 1:
+#        data = pd.read_csv(filename, header=list(range(nh)), sep="\t")
+#        data.columns = pd.MultiIndex.from_tuples([tuple(i[1:] for i in data.columns[0])] +list(data.columns)[1:])
+#    elif nh == 1:
+#        data = pd.read_csv(filename, header=0, sep="\t")
+#        data.columns = [data.columns[0][1:]] + data.columns.to_list()[1:]
+#    else:
+#        data = pd.read_csv(filename, header=None, sep="\t")
+#    return data  
+
 def readvcf(filename):
     nh = number_of_headers(filename)
     if nh > 1:
+        print(nh, " headers in the vcf file.")
         data = pd.read_csv(filename, skiprows=nh, header=None, sep="\t")
         #data.columns = pd.MultiIndex.from_tuples([tuple(i[1:] for i in data.columns[0])] +list(data.columns)[1:])
     elif nh == 1:
         data = pd.read_csv(filename, skiprows=1, header=None, sep="\t")
         #data.columns = [data.columns[0][1:]] + data.columns.to_list()[1:]
     else:
+        print("no header")
         data = pd.read_csv(filename, header=None, sep="\t")
     return data  
 
@@ -314,6 +367,15 @@ def returnonehot(string, dinucleotide=False):
 
     return out
 
+#def read_TFFM(file):
+#    tree = ET.parse(file)
+#    root = tree.getroot()
+#    data = []
+#    for state in root[0].iterfind("state"):
+#        discrete = state[0]
+#       if "order" in discrete.attrib:
+#           data.append(discrete.text.split(","))
+#   return np.array(data, dtype=float)
 
 def read_pwm(filename):
     with open(filename,'r') as file:
@@ -357,17 +419,15 @@ class MEME_probNorm():
             else:
                 background_prob = self.background
             
-            if text.endswith(".meme"):
+            if text.endswith(".pfm") or text.endswith(".ppm"):
+                print("motif is pfm or ppm format")
                 with open(text,'r') as file:
                     data = file.read()
-                self.version = re.compile(r'MEME version ([\d+\.*]+)').match(data).group(1)
-                self.names = re.findall(r"MOTIF (.*)\n", data)
-                self.background = re.findall(r"Background letter frequencies.*\n(A .* C .* G .* T .*)\n", data)[0]
-                self.strands = re.findall(r"strands: (.*)\n", data)[0].strip()
-                self.alphabet = re.findall(r"ALPHABET=(.*)\n", data)[0].strip()
-                letter_probs = re.findall(r"(letter-probability.*\n([ \t]*\d+\.?\d*[ \t]+\d+\.?\d*[ \t]+\d+\.?\d*[ \t]+\d+\.?\d*[ \t]*\n)+)", data)
+                self.names = re.findall(r"(>GM\.5\.0\.\S+)", data)
+                self.synonames = re.findall(r"(#GM\.5\.0\.\S+)", data)
+                letter_probs = re.findall(r"(>GM.*\n((?:[ \t]*\d*\.?\d+[eE]?-?\d*[ \t]+\d*\.?\d+[eE]?-?\d*[ \t]+\d*\.?\d+[eE]?-?\d*[ \t]+\d*\.?\d+[eE]?-?\d*[ \t]*\n)+))", data)
                 assert len(letter_probs) == len(self.names)
-                self.nmotifs = len(letter_probs)
+                self.nmotifs = len(self.names)
                 out_channels = self.nmotifs * 2
                 in_channels = 4
                 matrices = []
@@ -381,7 +441,33 @@ class MEME_probNorm():
                     matrices.append(np.array([i.split() for i in matrix], dtype=float))
                     if matrices[-1].shape[0] > length:
                         length = matrices[-1].shape[0]
-            else:
+                        
+            if text.endswith(".meme"):
+                with open(text,'r') as file:
+                    data = file.read()
+                self.version = re.compile(r'MEME version ([\d+\.*]+)').match(data).group(1)
+                self.names = re.findall(r"MOTIF (.*)\n", data)
+                self.background = re.findall(r"Background letter frequencies.*\n(A .* C .* G .* T .*)\n", data)[0]
+                self.strands = re.findall(r"strands: (.*)\n", data)[0].strip()
+                self.alphabet = re.findall(r"ALPHABET=(.*)\n", data)[0].strip()
+                letter_probs = re.findall(r"letter-probability.*\n((?:[ \t]*\d*\.?\d+[eE]?-?\d*[ \t]+\d*\.?\d+[eE]?-?\d*[ \t]+\d*\.?\d+[eE]?-?\d*[ \t]+\d*\.?\d+[eE]?-?\d*[ \t]*\n)+)", data)
+                assert len(letter_probs) == len(self.names)
+                self.nmotifs = len(letter_probs)
+                out_channels = self.nmotifs * 2
+                in_channels = 4
+                matrices = []
+                length = 0
+                for i in range(len(letter_probs)):
+                    matrix = letter_probs[i].split("\n")
+                    if len(matrix[-1]) == 0:
+                        matrix = matrix[1:-1]
+                    else:
+                        matrix = matrix[1:]
+                    matrices.append(np.array([i.split() for i in matrix], dtype=float))
+                    if matrices[-1].shape[0] > length:
+                        length = matrices[-1].shape[0]
+            
+            if os.path.isdir(text):
                 self.names = os.listdir(text)
                 self.nmotifs = len(self.names)
                 in_channels = 4
@@ -445,7 +531,16 @@ class MEME_probNorm():
         out = np.zeros((out_channels, in_channels, length), dtype=np.float32)
         mask = torch.zeros((out_channels, 1, length), dtype=torch.uint8)
         for k, kernel in enumerate(matrices):
+            #if transform == "constant":
+            #    bg=np.repeat(0.25, in_channels).reshape(1,4)
+            #if transform == "local":
+            #    bg=np.average(kernel,0).reshape(1,4)
+            #if transform != "none":
+            #   offset=np.min(kernel[kernel>0])
+            #    bgMat=np.tile(bg,(kernel.shape[0],1))
+            #    kernel=np.log((kernel+offset)/bgMat)
             
+            #if k==144: print("real pwm", kernel)
             if transform:
                 kernel, _ = transform_kernel(kernel, self.smoothing, background_prob)
             else:    
@@ -454,7 +549,9 @@ class MEME_probNorm():
                     kernel = kernel 
                 else:
                     kernel[kernel == 0] = self.precision
-                    kernel = np.log(kernel)            
+                    kernel = np.log(kernel)
+            #if k==144: print("after transformation transpose", kernel.T)
+            
             
             out[2*k  , :, :kernel.shape[0]] = kernel.T
             out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
@@ -466,6 +563,14 @@ class MEME_probNorm():
     def names(self):
         return self.names
     
+    #def Names(self, text):
+    #    if text.endswith(".meme"):
+    #        with open(text,'r') as file:
+    #            data = file.read()
+    #        names = re.findall(r"MOTIF (.*)\n", data)
+    #    else:
+    #        names = os.listdir(text)
+    #    return names
 
 class MEME_FABIAN():
     def __init__(self, precision=1e-7, smoothing=0.02, background=None):
@@ -538,11 +643,78 @@ class MEME_FABIAN():
             mask[2*k+1, :, :kernel.shape[0]] = 1
         return torch.from_numpy(out), mask, motif_norms
 
+#class TFFM():
+#    def __init__(self):
+#       self.names = []
+#       self.nmotifs = 0
+#
+#    def parse(self, directory):
+#        self.names = os.listdir(directory)
+#        self.nmotifs = len(self.names)
+#       in_channels = 16
+#        out_channels = self.nmotifs
+#       data = []
+#        height = 0
+#        for i in self.names:
+#            tffm = read_TFFM(os.path.join(directory, i))
+#            data.append(tffm)
+#            if tffm.shape[0] > height:
+#                height = tffm.shape[0]
+#        out = np.zeros((out_channels, in_channels, height), dtype=np.float32)
+#        mask = torch.zeros((out_channels, 1 , height), dtype=torch.uint8)
+#        for n, tffm in enumerate(data):
+#           out[n, :, :tffm.shape[0]] = tffm.T
+#            mask[n, :, :tffm.shape[0]] = 1
+#        return torch.from_numpy(out), mask
+
+#class TFFM_with_Transformation():
+#    def __init__(self, precision=1e-7, smoothing=0.02, background=None):
+#        self.names = []
+#        self.nmotifs = 0
+#        self.precision=1e-7
+#        self.smoothing = smoothing
+#        self.background = []
+#        if background is None:
+#            self.background_prob = np.ones(16)*0.0625
+#        else:
+#            self.background_prob = background
+#    def parse(self, directory):
+#        self.names = os.listdir(directory)
+#        self.nmotifs = len(self.names)
+#        in_channels = 16
+#        out_channels = self.nmotifs * 2
+#        data = []
+#        height = 0
+#        for i in self.names:
+#            if i.endswith(".dpcm") or i.endswith(".dpwm"):
+#                tffm = read_pwm(os.path.join(directory, i))
+#                data.append(tffm)
+#                if tffm.shape[0]>height:
+#                    height = tffm.shape[0]               
+#            else:
+#                tffm = read_TFFM(os.path.join(directory, i))
+#                data.append(tffm)
+#                if tffm.shape[0] > height:
+#                    height = tffm.shape[0]
+#        #print(data)
+#        out = np.zeros((out_channels, in_channels, height), dtype=np.float32)
+#        mask = torch.zeros((out_channels, 1 , height), dtype=torch.uint8)
+#        motif_norms = np.zeros(self.nmotifs, dtype=np.float32)
+#        for n, tffm in enumerate(data):
+#            tffm, motif_norms[n] = transform_kernel(tffm, self.smoothing, self.background_prob)
+#            out[2*n  , :, :tffm.shape[0]] = tffm.T
+#            out[2*n+1, :, :tffm.shape[0]] = tffm[::-1, ::-1].T
+#            mask[2*n , :, :tffm.shape[0]] = 1
+#            mask[2*n+1,:, :tffm.shape[0]] = 1
+#        return torch.from_numpy(out), mask, motif_norms
+
 
 
 class vcfData:
     def __init__(self, vcf, batchsize, genome, windowsize, dinucleotide = False):
         data = readvcf(vcf)
+        #print(data)
+        #print(data.shape)
         self.headers = data.columns.to_list()
         
         self.ref = data.iloc[:,3].to_numpy()
@@ -604,10 +776,20 @@ class vcfData:
             if refs>0 and refe<self.limits[c]:
                 seg = self.seqs.fetch(c, refs, refe)
                 seg=seg.upper()
+                #if i==0: 
+                #    if self.dinucleotide:
+                #        #seg="CTGCATAAACCGTCGGCAACGTTGGCCACCAGGGGGCGCCATGCACGTGGG"
+                #        seg="GCATAAACCGTCGGCAACGTTGGCCACCAGGGGGCGCCATGCACGTG"
+                #    else:
+                #        seg="GGCAGCAGAGGGAATGCAGATGGCCACCAGGGGGCGCCAGGAGTCAGCA"
+                #   print(seg, len(seg))
+                #    print(self.windowsize-1, -(self.windowsize-1), seg[self.windowsize-1:-(self.windowsize-1)], r)
+                #    print(r, a)
                 #print(f"Sequence: {seg[:self.windowsize-1]} {seg[self.windowsize-1]} {seg[self.windowsize:]}")
                 #print(f"a: ({a}, {self.lookup[a]}), r: ({r}, {self.lookup[r]}), Target: {seg[self.windowsize-1]}")
                 #assert(seg[self.windowsize-1]==r or len(a)!=1 or len(r)!=1)
                 #print(i, c, refs+int(self.windowsize), seg[self.windowsize-1:-(self.windowsize-1)], r)
+                
                 assert(seg[self.windowsize-1:-(self.windowsize-1)]==r)
                 batch[i, :, :int(refe-refs-offset)] = returnonehot(seg, self.dinucleotide)
                 returnmask(i, mask, self.windowsize, refs, refe, self.dinucleotide)
@@ -629,6 +811,68 @@ def stringstats(string):
     patterns = kmers_count(string)
     return np.array([gccount, lowercaseratio, *patterns], dtype=np.float32)
 
+#class SegmentData:
+#    def __init__(self, bed, batchsize, genome, windowsize, up, dinucleotide=False):
+#        self.chrs, self.starts, self.ends, self.peaks = readbed(bed, up)
+#        self.id = ["_".join([c, str(s), str(e)]) for c, s, e in zip(self.chrs, self.starts, self.ends)]
+#        self.midpoints = np.asarray(np.ceil((self.starts + self.ends)/2),dtype=int)
+#        self.seqs = FastaFile(genome)
+#        refs = self.seqs.references
+#        lengths = self.seqs.lengths
+#        if windowsize>(min(lengths)/2):
+#            self.new_starts = self.starts
+#            self.new_ends=self.ends
+#        else:
+#            self.new_starts = self.midpoints - windowsize
+#            self.new_ends = self.midpoints + windowsize
+#        self.batchsize = batchsize
+#        self.n = len(self.chrs)
+#        self.padding = windowsize
+#        self.additional = 4 * 4 + 2
+#        self.limits = {refs[i]: lengths[i] for i in range(len(refs))}
+#        self.out = open("coordinatesUsed.bed", "w")
+#        self.dinucleotide = dinucleotide
+
+#    def names(self):
+#        return self.id
+
+#    def __len__(self):
+#        return int(np.ceil(self.n / self.batchsize))
+
+#    def __getitem__(self, i):
+#        i1, i2 = i*self.batchsize, (i+1)*self.batchsize
+#        if i2 >= self.n: i2 = self.n
+#        batchsize = int(i2 - i1)
+#        if self.dinucleotide:
+#            height = np.max(self.new_ends[i1:i2] - self.new_starts[i1:i2])-1# + self.padding
+#            width = 16
+#        else:
+#            height = np.max(self.new_ends[i1:i2] - self.new_starts[i1:i2])# + self.padding
+#            width = 4
+#        batch = np.zeros((batchsize, width, height), dtype=np.float32) 
+#        stats = np.empty((batchsize, self.additional), dtype=np.float32)
+#        for i, c, p, s, e, new_s, new_e in zip(range(i2-i1), self.chrs[i1:i2], self.peaks[i1:i2], self.starts[i1:i2], self.ends[i1:i2], self.new_starts[i1:i2], self.new_ends[i1:i2]):
+#            self.out.write(c+"\t"+str(new_s)+"\t"+str(new_e)+"\n")
+#            if all(self.peaks!=None) and all('peak' in string for string in self.peaks):
+#                if i==0: print('peaks available')
+#                seg = self.seqs.fetch(p, new_s-s, new_e-s)
+#            else:
+#                if i==0: print('peaks not available')
+#                if new_s>0 and new_e<self.limits[c]:
+#                    seg = self.seqs.fetch(c, new_s, new_e)
+#                else:
+#                    seg = "N"*(self.padding*2)
+
+#            stats[i] = stringstats(seg)
+#            if self.dinucleotide:
+#                batch[i, :, :(new_e-new_s)-1] = returnonehot(seg, dinucleotide=True)
+#            else:
+#                batch[i, :, :(new_e-new_s)] = returnonehot(seg)
+#        return torch.from_numpy(batch), stats
+
+#    def __del__(self):
+#        pass
+#        #self.out.close()
 
 if __name__ == "__main__":
     motif = MEME_FABIAN()
