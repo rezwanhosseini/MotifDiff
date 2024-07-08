@@ -5,6 +5,7 @@ MotifDiff is a novel computational tool designed to quantify variant effects usi
 ```
 pip install MotifDiff-pkg
 ```
+* if you're using Spyder, you might see a dependency version conflict between spyder, pyqt, and pyqtwebengine. we recommend using a compatible version of spyder, otherwise the error does not interfere with the installation, and the installation will be done regardless.  
 ## How to use
 The very basic run with the required inputs will be:
 ```
