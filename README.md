@@ -10,7 +10,7 @@ pip install MotifDiff-pkg
 ```
 ### cloning the repository
 ```
-git clone ...
+git clone git@github.com:rezwanhosseini/MotifDiff.git
 ```
 then navigate to the directory and create the virtual environment to install the required dependencies.
 ```
