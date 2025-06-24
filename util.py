@@ -421,7 +421,10 @@ class MEME_probNorm():
                 background_prob = np.ones(4)/4
             else:
                 background_prob = self.background
-            
+
+            # TODO:
+            # change the conditions to be based on whether it's a single file or a directory including separate files per motif.
+            # then define the conditions on the format of the file, whether they're frequency, count, probability or log-likelihood regardless of what the file name ends with
             if text.endswith(".pfm") or text.endswith(".ppm"):
                 print("motif is pfm or ppm format")
                 with open(text,'r') as file:
