@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from torch.nn import functional as F
 import pandas as pd
-from .util import vcfData, MEME_probNorm, MEME_FABIAN, MCspline_fitting, mc_spline #
+from util import vcfData, MEME_probNorm, MEME_FABIAN, MCspline_fitting, mc_spline #
 import torch
 import numpy as np
 from enum import Enum
