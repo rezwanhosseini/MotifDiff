@@ -66,7 +66,7 @@ def variantdiff(genome: str = typer.Option(..., help="fasta file for the genome"
                 normalization_file: str = typer.Option(None, "--norm", help="file including normalization params. should be consistent with the transform option"),
                 mode: mode_type = typer.Option(mode_type.max, help="Operation mode for the pooling layer (max/average)"),                 
                 batch: int = typer.Option(128, help="batch size"),
-                out_file: str = typer.Option(..., "--out", help="output directory"),
+                out_file: str = typer.Option('output', "--out", help="output directory"),
                 window:int = typer.Option(0, help="window size"), # change this in a way that if it gets a value use that value and if not the default will be kernel size (instead of setting 0 as the default, make it none or not receiving an input as the default)
                 kernel: kernel_type = typer.Option(kernel_type.PWM, help="Choose between PWM (4 dimensional) or TFFM (16 dimensional) (default = PWM).")
                 ):
