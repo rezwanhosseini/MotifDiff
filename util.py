@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import pandas as pd
 from pysam import FastaFile
+from Bio.Seq import Seq
 import time
 import itertools
 import xml.etree.ElementTree as ET
@@ -280,6 +281,8 @@ def MCspline_fitting(pwms, nucleotide_prob=None, gran=None, size=1000, nuc="mono
 
 def mc_spline (mat, spline_list):
     out = torch.empty_like(mat)
+    #print(mat.shape)
+    #print(len(spline_list))
     assert mat.shape[1] == len(spline_list)
     for i in range(len(spline_list)):
         spl = spline_list[i]
@@ -304,14 +307,14 @@ def mc_spline (mat, spline_list):
 def readvcf(filename):
     nh = number_of_headers(filename)
     if nh > 1:
-        print(nh, " headers in the vcf file.")
+        #print(nh, " headers in the vcf file.")
         data = pd.read_csv(filename, skiprows=nh, header=None, sep="\t")
         #data.columns = pd.MultiIndex.from_tuples([tuple(i[1:] for i in data.columns[0])] +list(data.columns)[1:])
     elif nh == 1:
         data = pd.read_csv(filename, skiprows=1, header=None, sep="\t")
         #data.columns = [data.columns[0][1:]] + data.columns.to_list()[1:]
     else:
-        print("no header")
+        #print("no header")
         data = pd.read_csv(filename, header=None, sep="\t")
     return data  
 
@@ -412,7 +415,7 @@ class MEME_probNorm():
         self.smoothing = smoothing
         self.background_prob = background
 
-    def parse(self, text, nuc="mono", transform=False):
+    def parse(self, text, nuc="mono", transform=False, strand_specific=False):
         if nuc == "mono":  
             if self.background_prob is None:
                 background_prob = np.ones(4)/4
@@ -552,11 +555,16 @@ class MEME_probNorm():
                     kernel = np.log(kernel)
             #if k==144: print("after transformation transpose", kernel.T)
             
-            
-            out[2*k  , :, :kernel.shape[0]] = kernel.T
-            out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
-            mask[2*k  , :, :kernel.shape[0]] = 1
-            mask[2*k+1, :, :kernel.shape[0]] = 1
+            if strand_specific:
+                out[2*k  , :, :kernel.shape[0]] = kernel.T
+                out[2*k+1, :, :kernel.shape[0]] = kernel.T
+                mask[2*k  , :, :kernel.shape[0]] = 1
+                mask[2*k+1, :, :kernel.shape[0]] = 1
+            else:
+                out[2*k  , :, :kernel.shape[0]] = kernel.T
+                out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
+                mask[2*k  , :, :kernel.shape[0]] = 1
+                mask[2*k+1, :, :kernel.shape[0]] = 1
             #if k==144: print(torch.from_numpy(out[2*k  , :, :kernel.shape[0]]))
         return torch.from_numpy(out), mask
     
@@ -585,7 +593,7 @@ class MEME_FABIAN():
         self.smoothing = smoothing
         self.background_prob = background
             
-    def parse(self, text, nuc="mono"):
+    def parse(self, text, nuc="mono", strand_specific=False):
         if nuc == "mono":
             if self.background_prob is None:
                 background_prob = np.ones(4)/4
@@ -637,10 +645,16 @@ class MEME_FABIAN():
         motif_norms = np.zeros(self.nmotifs, dtype=np.float32)
         for k, kernel in enumerate(matrices):
             kernel, motif_norms[k] = transform_kernel(kernel, self.smoothing, background_prob)
-            out[2*k  , :, :kernel.shape[0]] = kernel.T
-            out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
-            mask[2*k  , :, :kernel.shape[0]] = 1
-            mask[2*k+1, :, :kernel.shape[0]] = 1
+            if strand_specific:
+                out[2*k  , :, :kernel.shape[0]] = kernel.T
+                out[2*k+1, :, :kernel.shape[0]] = kernel.T
+                mask[2*k  , :, :kernel.shape[0]] = 1
+                mask[2*k+1, :, :kernel.shape[0]] = 1
+            else:
+                out[2*k  , :, :kernel.shape[0]] = kernel.T
+                out[2*k+1, :, :kernel.shape[0]] = kernel[::-1, ::-1].T
+                mask[2*k  , :, :kernel.shape[0]] = 1
+                mask[2*k+1, :, :kernel.shape[0]] = 1
         return torch.from_numpy(out), mask, motif_norms
 
 #class TFFM():
@@ -711,11 +725,13 @@ class MEME_FABIAN():
 
 
 class vcfData:
-    def __init__(self, vcf, batchsize, genome, windowsize, dinucleotide = False):
+    def __init__(self, vcf, batchsize, genome, windowsize, dinucleotide = False, strand='+'):
         data = readvcf(vcf)
         #print(data)
         #print(data.shape)
         self.headers = data.columns.to_list()
+
+        self.strand = strand
         
         self.ref = data.iloc[:,3].to_numpy()
         self.alt = data.iloc[:,4].to_numpy()
@@ -775,7 +791,23 @@ class vcfData:
         for i, c, refs, refe, alts, alte, r, a, lenr, lena in zip(range(i2-i1), self.chrs[i1:i2], self.refstarts[i1:i2], self.refends[i1:i2], self.altstarts[i1:i2], self.altends[i1:i2], self.ref[i1:i2], self.alt[i1:i2], self.reflength[i1:i2], self.altlength[i1:i2]):
             if refs>0 and refe<self.limits[c]:
                 seg = self.seqs.fetch(c, refs, refe)
-                seg=seg.upper()
+                #print(seg)
+                #print(self.strand)
+                if self.strand=='+':
+                    seg=seg
+                    seg=seg.upper()
+                else:
+                    seg = str(Seq(seg).reverse_complement())
+                    seg=seg.upper()
+                    revcomp_r = str(Seq(r).reverse_complement())
+                    revcomp_a = str(Seq(a).reverse_complement())
+                    r = revcomp_r
+                    a = revcomp_a
+                #print(seg)
+                #print(seg[self.windowsize-1:-(self.windowsize-1)], r)
+                assert(seg[self.windowsize-1:-(self.windowsize-1)]==r)
+
+                
                 #if i==0: 
                 #    if self.dinucleotide:
                 #        #seg="CTGCATAAACCGTCGGCAACGTTGGCCACCAGGGGGCGCCATGCACGTGGG"
@@ -790,12 +822,17 @@ class vcfData:
                 #assert(seg[self.windowsize-1]==r or len(a)!=1 or len(r)!=1)
                 #print(i, c, refs+int(self.windowsize), seg[self.windowsize-1:-(self.windowsize-1)], r)
                 
-                assert(seg[self.windowsize-1:-(self.windowsize-1)]==r)
+                
                 batch[i, :, :int(refe-refs-offset)] = returnonehot(seg, self.dinucleotide)
                 returnmask(i, mask, self.windowsize, refs, refe, self.dinucleotide)
                 #print(f"{seg[:self.windowsize-1]} + {a} + {seg[-(self.windowsize-1):]}, {self.dinucleotide}")
                 altbatch[i, :, :int(alte-alts-offset)] = returnonehot(seg[:self.windowsize-1] + a + seg[-(self.windowsize-1):], self.dinucleotide)
                 returnmask(i, altmask, self.windowsize, alts, alte, self.dinucleotide)
+                #if i in range(2):
+                    #print(a, revcomp_a, '--', r, revcomp_r)
+                    #print('ref onehot:', seg)
+                    #print('alt onehot:', seg[:self.windowsize-1] + a + seg[-(self.windowsize-1):])
+                    #print(i, batch[i, :, :int(refe-refs-offset)]-altbatch[i, :, :int(alte-alts-offset)])
         return torch.from_numpy(batch), mask, torch.from_numpy(altbatch), altmask #torch.from_numpy(batch)
 
 def countlowercase(arr):
@@ -883,4 +920,4 @@ if __name__ == "__main__":
     for i in range(len(segments)):
         orig, alt = segments[i]
     end = time.time()
-    print(f"other took {end-start}")
+    print(f"test took {end-start}")
