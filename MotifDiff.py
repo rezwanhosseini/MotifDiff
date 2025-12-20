@@ -25,7 +25,6 @@ def write_output_diff(filename, mat, names, index=None):
         pd.DataFrame(mat, columns = names, index=index).to_csv(filename, header=True, index=True, sep="\t")
         #feather.write_feather(pd.DataFrame(mat, columns = names, index=index), f"{filename}.feather")
 
-
 class mode_type(str, Enum):
     max = "max"
     average = "average"
