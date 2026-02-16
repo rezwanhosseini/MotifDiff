@@ -12,14 +12,17 @@ from scipy.interpolate import PchipInterpolator
 import regex as re
 import itertools as itt
 from collections import namedtuple
+import gzip
 
 torch.set_printoptions(precision=8)
 np.set_printoptions(precision=8)
 
+def open_maybe_gzip(path):
+    return gzip.open(path, "rt") if path.endswith((".gz", ".bgz")) else open(path, "r")
 
 def number_of_headers(filename):
     header=0
-    with open(filename,"r") as file:      
+    with open_maybe_gzip(filename) as file:      
         while True:
             line = file.readline()      
             if line.startswith("#"):
@@ -306,16 +309,17 @@ def mc_spline (mat, spline_list):
 
 def readvcf(filename):
     nh = number_of_headers(filename)
+    compression = "gzip" if filename.endswith((".gz", ".bgz")) else None
     if nh > 1:
         #print(nh, " headers in the vcf file.")
-        data = pd.read_csv(filename, skiprows=nh, header=None, sep="\t")
+        data = pd.read_csv(filename, skiprows=nh, header=None, sep="\t", compression=compression)
         #data.columns = pd.MultiIndex.from_tuples([tuple(i[1:] for i in data.columns[0])] +list(data.columns)[1:])
     elif nh == 1:
-        data = pd.read_csv(filename, skiprows=1, header=None, sep="\t")
+        data = pd.read_csv(filename, skiprows=1, header=None, sep="\t", compression=compression)
         #data.columns = [data.columns[0][1:]] + data.columns.to_list()[1:]
     else:
         #print("no header")
-        data = pd.read_csv(filename, header=None, sep="\t")
+        data = pd.read_csv(filename, header=None, sep="\t", compression=compression)
     return data  
 
 def readbed(filename, up):

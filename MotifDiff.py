@@ -25,7 +25,6 @@ def write_output_diff(filename, mat, names, index=None):
         pd.DataFrame(mat, columns = names, index=index).to_csv(filename, header=True, index=True, sep="\t")
         #feather.write_feather(pd.DataFrame(mat, columns = names, index=index), f"{filename}.feather")
 
-
 class mode_type(str, Enum):
     max = "max"
     average = "average"
@@ -154,6 +153,8 @@ def variantdiff(genome: str = typer.Option(..., help="fasta file for the genome"
                 alt = mc_spline(alt, spline_list)           
                 ref = np.nan_to_num(ref, nan=0)
                 alt = np.nan_to_num(alt, nan=0)            
+                _,ref_max_pos = torch.max(torch.tensor(ref[:,:,:windowsize]), dim=2)
+                _,alt_max_pos = torch.max(torch.tensor(alt[:,:,:windowsize]), dim=2)
                 ref = F.avg_pool1d(torch.tensor(ref), ref.shape[2])
                 alt = F.avg_pool1d(torch.tensor(alt), alt.shape[2])   
             if mode == "max":
@@ -180,6 +181,8 @@ def variantdiff(genome: str = typer.Option(..., help="fasta file for the genome"
 
             
         if diff_score == "FABIAN":                 
+            _,ref_max_pos = torch.max(torch.tensor(ref[:,:,:windowsize]), dim=2)
+            _,alt_max_pos = torch.max(torch.tensor(alt[:,:,:windowsize]), dim=2)
             ref = F.max_pool1d(ref, ref.shape[2]).numpy()
             alt = F.max_pool1d(alt, alt.shape[2]).numpy()
             ref = np.max(ref.reshape(ref.shape[0],-1,2), axis=2) # separates the convolutions from the original kernel and the reverse complement kernel into two differetn columns AND then keeps the maximum between those two
