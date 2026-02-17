@@ -470,9 +470,9 @@ class MEME_probNorm():
                 for i in range(len(letter_probs)):
                     matrix = letter_probs[i].split("\n")
                     if len(matrix[-1]) == 0:
-                        matrix = matrix[1:-1]
+                        matrix = matrix[:-1] #only remove the last row
                     else:
-                        matrix = matrix[1:]
+                        matrix = matrix #no rows removed
                     matrices.append(np.array([i.split() for i in matrix], dtype=float))
                     if matrices[-1].shape[0] > length:
                         length = matrices[-1].shape[0]
